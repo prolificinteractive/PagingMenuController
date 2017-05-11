@@ -47,7 +47,12 @@ open class MenuItemView: UIView {
                 descriptionWidthConstraint.constant = calculateLabelSize(descriptionLabel, maxWidth: maxWindowSize).width
             case let .image(image, selectedImage):
                 menuImageView.image = isSelected ? (selectedImage ?? image) : image
-            case .custom: break
+            case let .attributedText(attributedText):
+                updateLabel(titleLabel, attributedText: attributedText)
+                
+                // adjust label width if needed
+                let labelSize = calculateAttributedLabelSize(titleLabel, maxWidth: maxWindowSize)
+                widthConstraint.constant = labelSize.width
             }
         }
     }
@@ -93,10 +98,10 @@ open class MenuItemView: UIView {
                 self.setupImageView(image)
                 self.layoutImageView()
             })
-        case .custom(let view):
+        case let .attributedText(attributedText):
             commonInit({
-                self.setupCustomView(view)
-                self.layoutCustomView()
+                self.setupTitleLabel(attributedText)
+                self.layoutAttributedLabel()
             })
         }
     }
@@ -135,8 +140,11 @@ open class MenuItemView: UIView {
         case .multilineText:
             widthConstraint.constant = calculateLabelSize(titleLabel, maxWidth: size.width).width
             descriptionWidthConstraint.constant = calculateLabelSize(descriptionLabel, maxWidth: size.width).width
-        case .image, .custom:
+        case .image:
             widthConstraint.constant = size.width / CGFloat(menuOptions.itemsOptions.count)
+        case .attributedText(_):
+            let labelSize = calculateAttributedLabelSize(titleLabel, maxWidth: size.width)
+            widthConstraint.constant = labelSize.width
         }
     }
     
@@ -155,6 +163,10 @@ open class MenuItemView: UIView {
         setupLabel(titleLabel, text: text)
     }
     
+    fileprivate func setupTitleLabel(_ attributedText: MenuItemAttributedText) {
+        setupLabel(titleLabel, attributedText: attributedText)
+    }
+    
     fileprivate func setupMultilineLabel(_ text: MenuItemText, description: MenuItemText) {
         setupLabel(titleLabel, text: text)
         setupLabel(descriptionLabel, text: description)
@@ -166,9 +178,19 @@ open class MenuItemView: UIView {
         addSubview(label)
     }
     
+    fileprivate func setupLabel(_ label: UILabel, attributedText: MenuItemAttributedText) {
+        label.attributedText = attributedText.attributedText
+        updateLabel(label, attributedText: attributedText)
+        addSubview(label)
+    }
+    
     fileprivate func updateLabel(_ label: UILabel, text: MenuItemText) {
         label.textColor = isSelected ? text.selectedColor : text.color
         label.font = isSelected ? text.selectedFont : text.font
+    }
+    
+    fileprivate func updateLabel(_ label: UILabel, attributedText: MenuItemAttributedText) {
+        label.attributedText = isSelected ? attributedText.selectedAttributedText : attributedText.attributedText
     }
     
     fileprivate func setupImageView(_ image: UIImage) {
@@ -213,6 +235,20 @@ open class MenuItemView: UIView {
         // H:|[titleLabel](==labelSize.width)|
         // V:|[titleLabel]|
         let titleLabelSize = calculateLabelSize(titleLabel, maxWidth: maxWindowSize)
+        widthConstraint = titleLabel.widthAnchor.constraint(equalToConstant: titleLabelSize.width)
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor),
+            widthConstraint,
+            titleLabel.topAnchor.constraint(equalTo: topAnchor),
+            titleLabel.bottomAnchor.constraint(equalTo: bottomAnchor),
+            ])
+    }
+    
+    fileprivate func layoutAttributedLabel() {
+        // H:|[titleLabel](==labelSize.width)|
+        // V:|[titleLabel]|
+        let titleLabelSize = calculateAttributedLabelSize(titleLabel, maxWidth: maxWindowSize)
         widthConstraint = titleLabel.widthAnchor.constraint(equalToConstant: titleLabelSize.width)
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -283,8 +319,8 @@ extension MenuItemView {
             descriptionLabel.removeFromSuperview()
         case .image:
             menuImageView.removeFromSuperview()
-        case .custom:
-            customView?.removeFromSuperview()
+        case .attributedText(_):
+            titleLabel.removeFromSuperview()
         }
         
         dividerImageView?.removeFromSuperview()
@@ -306,6 +342,11 @@ extension MenuItemView {
         return NSString(string: text).boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [NSFontAttributeName: label.font], context: nil).size
     }
     
+    fileprivate func estimatedAttributedLabelSize(_ label: UILabel) -> CGSize {
+        guard let attributedText = label.attributedText else { return .zero }
+        return attributedText.boundingRect(with: CGSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude), options: .usesLineFragmentOrigin, context: nil).size
+    }
+    
     fileprivate func calculateLabelSize(_ label: UILabel, maxWidth: CGFloat) -> CGSize {
         guard let _ = label.text else { return .zero }
         
@@ -320,6 +361,23 @@ extension MenuItemView {
         }
         
         let itemHeight = floor(estimatedLabelSize(label).height)
+        return CGSize(width: itemWidth + horizontalMargin * 2, height: itemHeight)
+    }
+    
+    fileprivate func calculateAttributedLabelSize(_ label: UILabel, maxWidth: CGFloat) -> CGSize {
+        guard let _ = label.attributedText else { return .zero }
+        
+        let itemWidth: CGFloat
+        switch menuOptions.displayMode {
+        case .standard(let widthMode, _, _):
+            itemWidth = labelWidth(widthMode, estimatedSize: estimatedLabelSize(label))
+        case .segmentedControl:
+            itemWidth = maxWidth / CGFloat(menuOptions.itemsOptions.count)
+        case .infinite(let widthMode, _):
+            itemWidth = labelWidth(widthMode, estimatedSize: estimatedAttributedLabelSize(label))
+        }
+        
+        let itemHeight = floor(estimatedAttributedLabelSize(label).height)
         return CGSize(width: itemWidth + horizontalMargin * 2, height: itemHeight)
     }
     
